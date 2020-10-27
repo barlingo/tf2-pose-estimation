@@ -2,6 +2,7 @@ import argparse
 import logging
 import time
 
+import os
 import cv2
 import numpy as np
 
@@ -26,8 +27,10 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str, default='mobilenet_thin', help='cmu / mobilenet_thin / mobilenet_v2_large / mobilenet_v2_small')
     parser.add_argument('--show-process', type=bool, default=False,
                         help='for debug purpose, if enabled, speed for inference is dropped.')
+    parser.add_argument('--show_video', type=bool, default=False,
+                        help='Display video as is processed.')
+    parser.add_argument('--output_json', type=str, default='/tmp/', help='writing output json dir')
     parser.add_argument('--showBG', type=bool, default=True, help='False to show skeleton only.')
-    parser.add_argument('--output', type=str, default='', help='Output file location')
     args = parser.parse_args()
 
     logger.debug('initialization %s : %s' % (args.model, get_graph_path(args.model)))
@@ -35,30 +38,35 @@ if __name__ == '__main__':
     e = TfPoseEstimator(get_graph_path(args.model), target_size=(w, h))
     cap = cv2.VideoCapture(args.video)
 
-    ret_val, image = cap.read()
-    logger.info('video image=%dx%d' % (image.shape[1], image.shape[0]))
+    if args.output_json == '/tmp/':
+        json_dir = args.video.replace('dataset', 'keypoint', 1)
+        json_dir = json_dir.replace('.mp4', '', 1)
+        if not os.path.exists(json_dir):
+            os.makedirs('./' + json_dir)
+
     if cap.isOpened() is False:
         print("Error opening video stream or file")
+    frame = 0
     while cap.isOpened():
-        while True:
-            ret_val, image = cap.read()
+            while True:
+                ret_val, image = cap.read()
 
-            logger.debug('image process+')
-            humans = e.inference(image, resize_to_default=(w > 0 and h> 0), upsample_size=4.0)
+                logger.debug('image process+')
+                humans = e.inference(image, resize_to_default=(w > 0 and h> 0), upsample_size=4.0)
 
-            logger.debug('postprocess+')
-            if not args.showBG:
-                image = np.zeros(image.shape)
-            image = TfPoseEstimator.draw_humans(image, humans, imgcopy=False)
+                logger.debug('postprocess+')
+                if not args.showBG:
+                    image = np.zeros(image.shape)
+                image = TfPoseEstimator.draw_humans(image, humans, imgcopy=False, frame=frame, output_json_dir=json_dir)
+                frame += 1
 
-            cv2.putText(image,
-                        "FPS: %f" % (1.0 / (time.time() - fps_time)),
-                        (10, 10),  cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                        (0, 255, 0), 2)
-            cv2.imshow('tf-pose-estimation result', image)
-            fps_time = time.time()
-            if cv2.waitKey(1) == 27:
-                break
-            logger.debug('finished+')
-
-    cv2.destroyAllWindows()
+                cv2.putText(image,
+                            "FPS: %f" % (1.0 / (time.time() - fps_time)),
+                            (10, 10),  cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                            (0, 255, 0), 2)
+                if args.show_video:
+                    cv2.imshow('tf-pose-estimation result', image)
+                fps_time = time.time()
+                if cv2.waitKey(1) == 27:
+                    break
+                logger.debug('finished+')
